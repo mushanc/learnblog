@@ -129,4 +129,36 @@ class ModelMetaclass(type):
         attrs['__fields__'] = fields
         attrs['__select__'] = 'select `%s`, %s from `%s`' %(primaryKey, ','.join(escaped_fields), tableName)
         attrs['__insert__'] = 'insert into `%s` (%s,`%s`) values (%s)' % (tableName, ', '.join(escape_fields), primaryKey, create_args_string(len(escaped_fields) + 1))
-        attrs
+        attrs['__update__'] = 'update `%s` set %s where `%s` = ?' % (tableName, ', '.join(map(lambda f: '`%s`=?' % (mappings.get(f).name or f), fields)), primaryKey)
+        attrs['__delete__']= 'delete from `%s` where `%s` = ?' %(tableName, primaryKey)
+
+class Model(dict, metaclass = ModelMetaclass):
+
+    def __init__(self, **kw):
+        super(Model, self).__init__(**kw)
+
+    def __getattr__(self, key):
+        try:
+            return self[key]
+        except KeyError:
+            raise AttributeError(r"'Model' object has no attribute '%s'" % key)
+
+    def __setattr__(self,key, value):
+        self[key] = value
+
+    def getValue(self, key):
+        return getattr(self, key ,None)
+
+    def getValueOrDefault(self, key):
+        value = getattr(self, key, None)
+        if value is None:
+            field =self.__mappings__[key]
+            if field.default is not None:
+                value = field.default() if callable(field.default) else field.default
+                logging.debug('using default value for %s: %s' % (key , str(value)))
+        return value
+
+    @classmethod
+    async def findAll(cls, where = None, args = None, **kw):
+        'find objects by where clause.'
+        sql = [cls.__select__]
